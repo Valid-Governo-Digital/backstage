@@ -8,3 +8,9 @@ data:
   NODE_ENV: "production"
   POSTGRES_HOST: "backstage-hub-postgres"
   POSTGRES_PORT: "5432"
+  # The GitHub auth provider is registered in the backend, so it requires a
+  # clientId/clientSecret to initialize even though production sign-in uses the
+  # guest provider. These placeholders keep the backend from crashing at startup.
+  # Replace them with real GitHub OAuth app credentials to enable GitHub login.
+  AUTH_GITHUB_CLIENT_ID: "disabled-guest-auth"
+  AUTH_GITHUB_CLIENT_SECRET: "disabled-guest-auth"
