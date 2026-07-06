@@ -1,0 +1,155 @@
+name: Backstage Hub GKE
+
+on:
+  push:
+    branches:
+      - develop
+      - hmg
+      - main
+    paths:
+      - 'app-config*.yaml'
+      - 'packages/backend/**'
+      - 'packages/app/**'
+      - 'plugins/scaffolder-backend/sample-templates/**'
+      - 'infra/kubernetes/**'
+      - '.github/workflows/backstage-hub-gke.yaml'
+      - '.dockerignore'
+      - 'package.json'
+      - 'yarn.lock'
+  pull_request:
+    branches:
+      - develop
+      - hmg
+      - main
+    paths:
+      - 'app-config*.yaml'
+      - 'packages/backend/**'
+      - 'packages/app/**'
+      - 'plugins/scaffolder-backend/sample-templates/**'
+      - 'infra/kubernetes/**'
+      - '.github/workflows/backstage-hub-gke.yaml'
+      - '.dockerignore'
+      - 'package.json'
+      - 'yarn.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backstage-hub-gke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: validid-governodigital-sandbox
+  REGION: southamerica-east1
+  REGISTRY: gcr.io
+  GKE_CLUSTER: authid-cluster
+  GKE_REGION: southamerica-east1
+  GKE_NAMESPACE: ${{ github.ref_name == 'hmg' && 'gov-digital-hmg' || 'gov-digital-dev' }}
+  MANIFEST_DIR: infra/kubernetes
+  IMAGE_NAME: backstage-hub
+  IMAGE_CHANNEL_TAG: ${{ github.ref_name == 'hmg' && 'hmg' || 'latest' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Type check
+        run: yarn tsc
+      - name: Build backend bundle
+        run: yarn build:backend
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Type check
+        run: yarn tsc
+      - name: Build backend bundle
+        run: yarn build:backend
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: access_token
+      - name: Login to GCR
+        uses: docker/login-action@v3
+        with:
+          registry: gcr.io
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./packages/backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_CHANNEL_TAG }}-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_CHANNEL_TAG }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.IMAGE_CHANNEL_TAG }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.IMAGE_CHANNEL_TAG }},mode=max
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+      - name: Apply base manifests
+        run: |
+          set -euo pipefail
+          kubectl apply --namespace=${{ env.GKE_NAMESPACE }} -f ${{ env.MANIFEST_DIR }}/configmap.yaml
+          kubectl apply --namespace=${{ env.GKE_NAMESPACE }} -f ${{ env.MANIFEST_DIR }}/postgres-deployment.yaml
+          kubectl apply --namespace=${{ env.GKE_NAMESPACE }} -f ${{ env.MANIFEST_DIR }}/backend-deployment.yaml
+      - name: Deploy Backstage to GKE
+        run: |
+          set -euo pipefail
+          kubectl --namespace=${{ env.GKE_NAMESPACE }} set image deployment/backstage-hub \
+            backstage=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_CHANNEL_TAG }}-${{ github.sha }}
+          kubectl --namespace=${{ env.GKE_NAMESPACE }} rollout status deployment/backstage-hub --timeout=300s
+      - name: Apply ingress and autoscaling
+        run: |
+          set -euo pipefail
+          kubectl apply --namespace=${{ env.GKE_NAMESPACE }} -f ${{ env.MANIFEST_DIR }}/ingress.yaml
+          kubectl apply --namespace=${{ env.GKE_NAMESPACE }} -f ${{ env.MANIFEST_DIR }}/hpa.yaml
+
+  summary:
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Summary
+        run: |
+          echo "## Backstage Hub GKE" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build | ${{ needs.build.result || 'skipped' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy | ${{ needs.deploy.result || 'skipped' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Platform:** GKE \`${{ env.GKE_CLUSTER }}\` / \`${{ env.GKE_NAMESPACE }}\`" >> "$GITHUB_STEP_SUMMARY"

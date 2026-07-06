@@ -1,0 +1,41 @@
+app:
+  title: Backstage Template Hub
+  baseUrl: https://backstage.valid.ia.br
+
+backend:
+  baseUrl: https://backstage.valid.ia.br
+  listen: ':7007'
+  cors:
+    origin: https://backstage.valid.ia.br
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+
+auth:
+  environment: production
+  providers:
+    guest: {}
+
+techdocs:
+  generator:
+    runIn: local
+  publisher:
+    type: local
+
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+
+catalog:
+  locations:
+    - type: file
+      target: ./plugins/scaffolder-backend/sample-templates/all-templates.yaml
+      rules:
+        - allow: [Template, Location]

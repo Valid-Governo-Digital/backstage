@@ -54,4 +54,7 @@ RUN --mount=type=cache,target=/home/node/.yarn/berry/cache,sharing=locked,uid=10
 COPY --chown=node:node packages/backend/dist/bundle.tar.gz app-config*.yaml ./
 RUN tar xzf bundle.tar.gz && rm bundle.tar.gz
 
+# Keep the local scaffolder examples available in deployed Backstage instances.
+COPY --chown=node:node plugins/scaffolder-backend/sample-templates ./plugins/scaffolder-backend/sample-templates
+
 CMD ["node", "packages/backend", "--config", "app-config.yaml"]

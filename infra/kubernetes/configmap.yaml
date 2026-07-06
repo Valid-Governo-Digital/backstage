@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-hub-cfg
+  labels:
+    app: backstage-hub
+data:
+  NODE_ENV: "production"
+  POSTGRES_HOST: "backstage-hub-postgres"
+  POSTGRES_PORT: "5432"

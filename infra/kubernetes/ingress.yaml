@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backstage-hub-ingress
+  labels:
+    app: backstage-hub
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "backstage-hub-ip"
+    networking.gke.io/managed-certificates: "backstage-hub-cert"
+spec:
+  rules:
+    - host: backstage.valid.ia.br
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backstage-hub
+                port:
+                  number: 80
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: backstage-hub-cert
+  labels:
+    app: backstage-hub
+spec:
+  domains:
+    - backstage.valid.ia.br

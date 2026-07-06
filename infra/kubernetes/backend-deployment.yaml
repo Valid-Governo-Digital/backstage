@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage-hub
+  labels:
+    app: backstage-hub
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backstage-hub
+  template:
+    metadata:
+      labels:
+        app: backstage-hub
+    spec:
+      containers:
+        - name: backstage
+          image: gcr.io/validid-governodigital-sandbox/backstage-hub:latest
+          imagePullPolicy: Always
+          command:
+            - node
+            - packages/backend
+            - --config
+            - app-config.yaml
+            - --config
+            - app-config.gke.yaml
+          ports:
+            - containerPort: 7007
+              name: http
+          envFrom:
+            - configMapRef:
+                name: backstage-hub-cfg
+            - secretRef:
+                name: backstage-hub-secrets
+          livenessProbe:
+            httpGet:
+              path: /.backstage/health/v1/liveness
+              port: 7007
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /.backstage/health/v1/readiness
+              port: 7007
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: backstage-hub-backend-config
+spec:
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    type: HTTP
+    requestPath: /.backstage/health/v1/liveness
+    port: 7007
+    timeoutSec: 10
+    checkIntervalSec: 15
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-hub
+  labels:
+    app: backstage-hub
+  annotations:
+    cloud.google.com/backend-config: '{"default": "backstage-hub-backend-config"}'
+spec:
+  selector:
+    app: backstage-hub
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 7007
+      name: http

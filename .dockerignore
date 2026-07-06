@@ -7,3 +7,9 @@ node_modules
 packages/*/src
 packages/*/node_modules
 plugins
+!plugins/
+plugins/*
+!plugins/scaffolder-backend/
+plugins/scaffolder-backend/*
+!plugins/scaffolder-backend/sample-templates/
+!plugins/scaffolder-backend/sample-templates/**
