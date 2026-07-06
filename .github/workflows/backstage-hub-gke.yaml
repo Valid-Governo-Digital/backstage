@@ -5,7 +5,7 @@ on:
     branches:
       - develop
       - hmg
-      - main
+      - master
     paths:
       - 'app-config*.yaml'
       - 'packages/backend/**'
@@ -20,7 +20,7 @@ on:
     branches:
       - develop
       - hmg
-      - main
+      - master
     paths:
       - 'app-config*.yaml'
       - 'packages/backend/**'
