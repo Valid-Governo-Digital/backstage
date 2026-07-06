@@ -47,6 +47,12 @@ COPY --chown=node:node .yarnrc.yml ./
 COPY --chown=node:node yarn.lock package.json packages/backend/dist/skeleton.tar.gz ./
 RUN tar xzf skeleton.tar.gz && rm skeleton.tar.gz
 
+# Pre-create the global Yarn folder as the node user. The cache mount below only
+# provides the `cache` subfolder; without this, BuildKit creates the parent
+# `berry` directory as root and `yarn workspaces focus` (running as node) fails
+# with EACCES when writing its install state next to the cache.
+RUN mkdir -p /home/node/.yarn/berry
+
 RUN --mount=type=cache,target=/home/node/.yarn/berry/cache,sharing=locked,uid=1000,gid=1000 \
     yarn workspaces focus --all --production
 
