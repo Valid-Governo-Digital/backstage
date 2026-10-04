@@ -63,7 +63,8 @@ RUN tar xzf bundle.tar.gz && rm bundle.tar.gz
 # Keep the local scaffolder examples available in deployed Backstage instances.
 COPY --chown=node:node plugins/scaffolder-backend/sample-templates ./plugins/scaffolder-backend/sample-templates
 
-# Company software templates, loaded via catalog.locations in app-config.gke.yaml.
-COPY --chown=node:node templates ./templates
+# Group da Valid, carregado via catalog.locations em app-config.gke.yaml. Só o org.yaml
+# entra na imagem: templates/valid-platform-app está desativado até revisão de segurança.
+COPY --chown=node:node templates/org.yaml ./templates/org.yaml
 
 CMD ["node", "packages/backend", "--config", "app-config.yaml"]

@@ -1,3 +1,12 @@
+# ============================================================================================
+# DESATIVADO ATÉ REVISÃO DE SEGURANÇA. NÃO registre este template em catalog.locations.
+#
+# O deploy que ele gera (skeleton/.github/workflows/deploy.yml) publica no cluster
+# compartilhado authid-cluster autenticando com a chave JSON de service account do secret de
+# organização GCP_SA_KEY, e cria/altera registros na zona DNS `valid`, que é a de PRODUÇÃO.
+# Nunca foi usado. Fica versionado só como referência, fora do catálogo e fora da imagem
+# (o Dockerfile copia apenas templates/org.yaml).
+# ============================================================================================
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:

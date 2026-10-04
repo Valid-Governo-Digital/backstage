@@ -72,15 +72,15 @@ catalog:
       target: ./plugins/scaffolder-backend/sample-templates/all-templates.yaml
       rules:
         - allow: [Template, Location]
-    # Templates da Valid. Caminhos relativos ao WORKDIR /app da imagem.
+    # Group governo-digital. Caminho relativo ao WORKDIR /app da imagem.
+    #
+    # templates/valid-platform-app NÃO é registrado: está desativado até revisão de
+    # segurança (ver o aviso no topo do template.yaml). Como o catalog.rules global não
+    # permite Template, só as Locations desta lista conseguem trazer templates.
     - type: file
       target: ./templates/org.yaml
       rules:
         - allow: [User, Group]
-    - type: file
-      target: ./templates/valid-platform-app/template.yaml
-      rules:
-        - allow: [Template]
     # Repositório de templates (internal): o catalog-info.yaml raiz é um kind: Location
     # GERADO por scripts/gerar_backstage.py, com um target por template.yaml. Lido com
     # o GITHUB_TOKEN da integração, que precisa enxergar repositórios internal da org.

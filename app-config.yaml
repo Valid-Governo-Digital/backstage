@@ -334,15 +334,12 @@ catalog:
       target: ../../plugins/scaffolder-backend/sample-templates/all-templates.yaml
       rules:
         - allow: [Template]
-    # Valid software templates (same set that is served in production)
+    # Valid group (same as production). templates/valid-platform-app is NOT
+    # registered: it is disabled pending a security review (see its template.yaml).
     - type: file
       target: ../../templates/org.yaml
       rules:
         - allow: [User, Group]
-    - type: file
-      target: ../../templates/valid-platform-app/template.yaml
-      rules:
-        - allow: [Template]
 
 scaffolder:
   auditor:
