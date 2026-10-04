@@ -81,3 +81,10 @@ catalog:
       target: ./templates/valid-platform-app/template.yaml
       rules:
         - allow: [Template]
+    # Repositório de templates (internal): o catalog-info.yaml raiz é um kind: Location
+    # GERADO por scripts/gerar_backstage.py, com um target por template.yaml. Lido com
+    # o GITHUB_TOKEN da integração, que precisa enxergar repositórios internal da org.
+    - type: url
+      target: https://github.com/Valid-Governo-Digital/templates/blob/main/catalog-info.yaml
+      rules:
+        - allow: [Location, Template]
