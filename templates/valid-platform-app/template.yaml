@@ -1,0 +1,176 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: valid-platform-app
+  title: Plataforma Valid (Node + Express)
+  description: |
+    Cria um repositório no GitHub com um serviço Node/Express e publica automaticamente
+    em https://<nome>.apps.valid.ia.br — imagem, IP estático, registro DNS, manifests do
+    GKE e certificado TLS são provisionados pelo pipeline, sem nenhum passo manual.
+  tags:
+    - node
+    - express
+    - gke
+    - recommended
+spec:
+  owner: group:default/governo-digital
+  type: service
+
+  parameters:
+    - title: Identificação
+      required:
+        - name
+        - description
+        - owner
+      properties:
+        name:
+          title: Nome
+          type: string
+          description: >-
+            Letras minúsculas, números e hífens. Define o subdomínio
+            (<nome>.valid.ia.br), o namespace e o nome da imagem.
+          pattern: '^[a-z]([-a-z0-9]{0,28}[a-z0-9])?$'
+          maxLength: 30
+          ui:autofocus: true
+        description:
+          title: Descrição
+          type: string
+          description: Para que serve este serviço
+        owner:
+          title: Time responsável
+          type: string
+          description: Grupo dono do componente no catálogo
+          default: group:default/governo-digital
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: Group
+
+    - title: Configuração do serviço
+      required:
+        - port
+        - hostSuffix
+      properties:
+        hostSuffix:
+          title: Domínio público
+          type: string
+          default: apps.valid.ia.br
+          description: >-
+            A zona valid.ia.br hospeda dezenas de hosts de produção. Publicar em
+            apps.valid.ia.br torna impossível colidir com eles.
+          enum:
+            - apps.valid.ia.br
+            - valid.ia.br
+          enumNames:
+            - 'apps.valid.ia.br — recomendado (isolado de produção)'
+            - 'valid.ia.br — raiz (só use se souber que o nome está livre)'
+        port:
+          title: Porta da aplicação
+          type: integer
+          description: Porta em que o container escuta
+          default: 8080
+          minimum: 1024
+          maximum: 65535
+        replicas:
+          title: Réplicas
+          type: integer
+          description: Número de pods
+          default: 2
+          minimum: 1
+          maximum: 10
+
+    - title: Repositório
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: Localização do repositório
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
+            allowedOwners:
+              - Valid-Governo-Digital
+
+  steps:
+    - id: fetch-base
+      name: Gerar projeto
+      action: fetch:template
+      input:
+        url: ./skeleton
+        # O workflow do GitHub Actions é copiado byte a byte: ele contém a sintaxe
+        # ${{ ... }} do próprio Actions, que o Nunjucks consumiria se fosse renderizado.
+        # Os valores por aplicação chegam até ele via deploy.env (esse sim, renderizado).
+        copyWithoutRender:
+          - .github/workflows/**
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          port: ${{ parameters.port }}
+          replicas: ${{ parameters.replicas }}
+          host: ${{ parameters.name }}.${{ parameters.hostSuffix }}
+          destination: ${{ parameters.repoUrl | parseRepoUrl }}
+
+    - id: publish
+      name: Publicar no GitHub
+      action: publish:github
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        description: ${{ parameters.description }}
+        defaultBranch: main
+        repoVisibility: internal
+        # A proteção de branch impede o primeiro push automatizado em repositórios
+        # recém-criados. Reavaliar depois que o fluxo estiver estável.
+        protectDefaultBranch: false
+
+    - id: register
+      name: Registrar no catálogo
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps['publish'].output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+    - id: deploy
+      name: Disparar o deploy
+      action: github:actions:dispatch
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        workflowId: deploy.yml
+        branchOrTagName: main
+        returnWorkflowRunDetails: true
+
+  output:
+    links:
+      # remoteUrl é o clone_url (termina em .git); montamos a URL da página do repo.
+      - title: Repositório
+        url: https://github.com/Valid-Governo-Digital/${{ parameters.name }}
+      - title: Abrir no catálogo
+        icon: catalog
+        entityRef: ${{ steps['register'].output.entityRef }}
+      - title: Acompanhar o deploy
+        icon: github
+        url: ${{ steps['deploy'].output.workflowRunHtmlUrl }}
+      - title: https://${{ parameters.name }}.${{ parameters.hostSuffix }}
+        url: https://${{ parameters.name }}.${{ parameters.hostSuffix }}
+    text:
+      - title: O que acontece agora
+        content: |
+          O deploy está em andamento e publicará em
+          **https://${{ parameters.name }}.${{ parameters.hostSuffix }}**.
+          A URL **não** responde imediatamente:
+
+          | Tempo | Estado |
+          | --- | --- |
+          | ~3-5 min | Imagem publicada, pods no ar, IP e registro DNS criados |
+          | ~5-10 min | Load balancer programado — até lá `404`/`502` é esperado |
+          | ~15-60 min | Certificado TLS emitido; o HTTPS passa a funcionar |
+
+          Acompanhe o certificado com:
+
+          ```
+          kubectl -n ${{ parameters.name }} get managedcertificate ${{ parameters.name }}-cert
+          ```
+
+          Erros de conexão antes do certificado ficar `Active` são normais e não indicam falha.

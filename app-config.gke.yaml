@@ -5,6 +5,11 @@ app:
 backend:
   baseUrl: https://backstage.valid.ia.br
   listen: ':7007'
+  auth:
+    # app-config.yaml deixa isto como `true` (padrão de desenvolvimento do upstream),
+    # o que permite chamar /api/* sem nenhuma credencial. Com o scaffolder criando
+    # repositórios e infraestrutura, isso vira uma primitiva de escrita anônima.
+    dangerouslyDisableDefaultAuthPolicy: false
   cors:
     origin: https://backstage.valid.ia.br
     methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
@@ -20,7 +25,31 @@ backend:
 auth:
   environment: production
   providers:
-    guest: {}
+    # Provider registrado em packages/backend/src/authModuleGithubProvider.ts, que
+    # resolve o username do GitHub para user:default/<username>.
+    #
+    # Requer um OAuth App no GitHub com callback:
+    #   https://backstage.valid.ia.br/api/auth/github/handler/frame
+    #
+    # clientId e clientSecret vêm do Secret backstage-hub-secrets (NÃO do ConfigMap:
+    # o ConfigMap hoje carrega os placeholders "disabled-guest-auth" e precisa perder
+    # essas duas chaves, senão elas sobrescrevem o Secret).
+    github:
+      production:
+        clientId: ${AUTH_GITHUB_CLIENT_ID}
+        clientSecret: ${AUTH_GITHUB_CLIENT_SECRET}
+    # Provider registrado em packages/backend/src/authModuleGoogleProvider.ts, que
+    # restringe a entrada a contas @valid.com — este é o controle de acesso real.
+    #
+    # Requer um OAuth 2.0 Client ID no Google Cloud com redirect URI:
+    #   https://backstage.valid.ia.br/api/auth/google/handler/frame
+    google:
+      production:
+        clientId: ${AUTH_GOOGLE_CLIENT_ID}
+        clientSecret: ${AUTH_GOOGLE_CLIENT_SECRET}
+    # O provider guest foi removido de propósito: ele se recusa a autenticar quando
+    # NODE_ENV != development e, mesmo habilitado à força, deixaria qualquer pessoa
+    # que abrisse a página criar repositórios e infraestrutura pelo scaffolder.
 
 techdocs:
   generator:
@@ -39,3 +68,12 @@ catalog:
       target: ./plugins/scaffolder-backend/sample-templates/all-templates.yaml
       rules:
         - allow: [Template, Location]
+    # Templates da Valid. Caminhos relativos ao WORKDIR /app da imagem.
+    - type: file
+      target: ./templates/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ./templates/valid-platform-app/template.yaml
+      rules:
+        - allow: [Template]

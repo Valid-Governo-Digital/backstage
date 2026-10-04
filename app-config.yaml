@@ -334,6 +334,15 @@ catalog:
       target: ../../plugins/scaffolder-backend/sample-templates/all-templates.yaml
       rules:
         - allow: [Template]
+    # Valid software templates (same set that is served in production)
+    - type: file
+      target: ../../templates/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../../templates/valid-platform-app/template.yaml
+      rules:
+        - allow: [Template]
 
 scaffolder:
   auditor:

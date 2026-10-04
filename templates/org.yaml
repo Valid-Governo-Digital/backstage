@@ -1,0 +1,11 @@
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: governo-digital
+  title: Governo Digital
+  description: Valid — Governo Digital
+spec:
+  type: team
+  profile:
+    displayName: Governo Digital
+  children: []

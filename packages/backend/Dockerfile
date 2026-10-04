@@ -63,4 +63,7 @@ RUN tar xzf bundle.tar.gz && rm bundle.tar.gz
 # Keep the local scaffolder examples available in deployed Backstage instances.
 COPY --chown=node:node plugins/scaffolder-backend/sample-templates ./plugins/scaffolder-backend/sample-templates
 
+# Company software templates, loaded via catalog.locations in app-config.gke.yaml.
+COPY --chown=node:node templates ./templates
+
 CMD ["node", "packages/backend", "--config", "app-config.yaml"]

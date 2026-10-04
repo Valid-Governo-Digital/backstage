@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${{ values.name }}-ingress
+  labels:
+    app: ${{ values.name }}
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # O IP é reservado pelo workflow antes deste apply.
+    kubernetes.io/ingress.global-static-ip-name: "${{ values.name }}-ip"
+    networking.gke.io/managed-certificates: "${{ values.name }}-cert"
+spec:
+  rules:
+    - host: ${{ values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${{ values.name }}
+                port:
+                  number: 80
+---
+# Certificados gerenciados pelo Google só começam a ser emitidos depois que o domínio
+# resolve para o IP do load balancer — por isso o workflow cria o registro DNS antes
+# de aplicar este manifest. A emissão leva de 15 a 60 minutos.
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: ${{ values.name }}-cert
+  labels:
+    app: ${{ values.name }}
+spec:
+  domains:
+    - ${{ values.host }}
