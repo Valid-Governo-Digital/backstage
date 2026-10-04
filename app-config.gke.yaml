@@ -5,6 +5,11 @@ app:
 backend:
   baseUrl: https://backstage.valid.ia.br
   listen: ':7007'
+  auth:
+    # app-config.yaml deixa isto como `true` (padrão de desenvolvimento do upstream),
+    # o que permite chamar /api/* sem nenhuma credencial. Com o scaffolder criando
+    # repositórios e infraestrutura, isso vira uma primitiva de escrita anônima.
+    dangerouslyDisableDefaultAuthPolicy: false
   cors:
     origin: https://backstage.valid.ia.br
     methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
@@ -20,7 +25,35 @@ backend:
 auth:
   environment: production
   providers:
-    guest: {}
+    # Provider registrado em packages/backend/src/authModuleGithubProvider.ts. O
+    # resolver (signInResolvers.ts) só aceita membro ATIVO da org Valid-Governo-Digital,
+    # consultando a membership com o token do próprio login (escopo read:org, pedido
+    # sempre), e resolve o username para user:default/<username>.
+    #
+    # Requer um OAuth App (de preferência criado DENTRO da org, para não esbarrar na
+    # restrição de OAuth Apps de terceiros) com callback:
+    #   https://backstage.valid.ia.br/api/auth/github/handler/frame
+    #
+    # clientId e clientSecret vêm do Secret backstage-hub-secrets.
+    github:
+      production:
+        clientId: ${AUTH_GITHUB_CLIENT_ID}
+        clientSecret: ${AUTH_GITHUB_CLIENT_SECRET}
+    # Provider registrado em packages/backend/src/authModuleGoogleProvider.ts. O
+    # resolver (signInResolvers.ts) só aceita e-mail verificado @valid.com.
+    #
+    # Requer um OAuth 2.0 Client ID no Google Cloud com redirect URI:
+    #   https://backstage.valid.ia.br/api/auth/google/handler/frame
+    google:
+      production:
+        clientId: ${AUTH_GOOGLE_CLIENT_ID}
+        clientSecret: ${AUTH_GOOGLE_CLIENT_SECRET}
+    # O app-config.yaml (desenvolvimento) declara `guest: {}` e o merge de configs o
+    # mantém aqui. O módulo guest se recusa a autenticar com NODE_ENV != development,
+    # a não ser com a flag abaixo; ela fica fixada em false para ninguém ligá-la por
+    # engano: com guest, qualquer pessoa que abrisse a página usaria o scaffolder.
+    guest:
+      dangerouslyAllowOutsideDevelopment: false
 
 techdocs:
   generator:
@@ -39,3 +72,19 @@ catalog:
       target: ./plugins/scaffolder-backend/sample-templates/all-templates.yaml
       rules:
         - allow: [Template, Location]
+    # Group governo-digital. Caminho relativo ao WORKDIR /app da imagem.
+    #
+    # templates/valid-platform-app NÃO é registrado: está desativado até revisão de
+    # segurança (ver o aviso no topo do template.yaml). Como o catalog.rules global não
+    # permite Template, só as Locations desta lista conseguem trazer templates.
+    - type: file
+      target: ./templates/org.yaml
+      rules:
+        - allow: [User, Group]
+    # Repositório de templates (internal): o catalog-info.yaml raiz é um kind: Location
+    # GERADO por scripts/gerar_backstage.py, com um target por template.yaml. Lido com
+    # o GITHUB_TOKEN da integração, que precisa enxergar repositórios internal da org.
+    - type: url
+      target: https://github.com/Valid-Governo-Digital/templates/blob/main/catalog-info.yaml
+      rules:
+        - allow: [Location, Template]

@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+npm-debug.log
+k8s
+deploy.env
+README.md
+DEPROVISION.md
+catalog-info.yaml

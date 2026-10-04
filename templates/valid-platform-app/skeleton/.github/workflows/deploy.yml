@@ -1,0 +1,154 @@
+# Este arquivo é copiado pelo scaffolder sem renderização (copyWithoutRender), por isso
+# a sintaxe ${{ ... }} abaixo é do GitHub Actions e chega intacta ao repositório gerado.
+# Os valores específicos da aplicação vêm de deploy.env, que é renderizado.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: validid-governodigital-sandbox
+  GKE_CLUSTER: authid-cluster
+  GKE_REGION: southamerica-east1
+  DNS_ZONE: valid
+  REGISTRY: gcr.io
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Carregar deploy.env
+        run: grep -E '^[A-Z_]+=' deploy.env >> "$GITHUB_ENV"
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: access_token
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: docker/login-action@v3
+        with:
+          registry: gcr.io
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            gcr.io/${{ env.PROJECT_ID }}/${{ env.APP_NAME }}:${{ github.sha }}
+            gcr.io/${{ env.PROJECT_ID }}/${{ env.APP_NAME }}:latest
+          cache-from: type=registry,ref=gcr.io/${{ env.PROJECT_ID }}/${{ env.APP_NAME }}:buildcache
+          cache-to: type=registry,ref=gcr.io/${{ env.PROJECT_ID }}/${{ env.APP_NAME }}:buildcache,mode=max
+
+      # Idempotente: o IP é reservado uma vez e reutilizado em todos os deploys seguintes.
+      - name: Reservar IP estático global
+        run: |
+          gcloud compute addresses describe "${APP_NAME}-ip" --global --project="$PROJECT_ID" >/dev/null 2>&1 \
+            || gcloud compute addresses create "${APP_NAME}-ip" --global --project="$PROJECT_ID"
+          IP="$(gcloud compute addresses describe "${APP_NAME}-ip" --global --project="$PROJECT_ID" --format='value(address)')"
+          echo "INGRESS_IP=$IP" >> "$GITHUB_ENV"
+          echo "IP do ingress: $IP"
+
+      # Precisa vir ANTES do ingress: o certificado gerenciado só entra em emissão
+      # depois que o domínio resolve para o IP do load balancer.
+      #
+      # A zona `valid` hospeda dezenas de registros de produção (api, auth, admin,
+      # backstage...). Sobrescrever um deles derrubaria o serviço correspondente, então
+      # só criamos registros novos ou reconfirmamos o nosso próprio IP.
+      - name: Criar/atualizar registro DNS
+        run: |
+          set -euo pipefail
+          ATUAL="$(gcloud dns record-sets list --zone="$DNS_ZONE" --project="$PROJECT_ID" \
+            --name="${DOMAIN}." --type=A --format='value(rrdatas[0])' 2>/dev/null || true)"
+
+          if [ -z "$ATUAL" ]; then
+            echo "Criando A ${DOMAIN} -> ${INGRESS_IP}"
+            gcloud dns record-sets create "${DOMAIN}." \
+              --zone="$DNS_ZONE" --type=A --ttl=300 --rrdatas="$INGRESS_IP" --project="$PROJECT_ID"
+          elif [ "$ATUAL" = "$INGRESS_IP" ]; then
+            echo "A ${DOMAIN} já aponta para ${INGRESS_IP} — nada a fazer."
+          elif [ "${ALLOW_DNS_OVERWRITE:-false}" = "true" ]; then
+            echo "::warning::Reapontando ${DOMAIN} de ${ATUAL} para ${INGRESS_IP}"
+            gcloud dns record-sets update "${DOMAIN}." \
+              --zone="$DNS_ZONE" --type=A --ttl=300 --rrdatas="$INGRESS_IP" --project="$PROJECT_ID"
+          else
+            echo "::error::${DOMAIN} já resolve para ${ATUAL}, que não é o IP desta aplicação (${INGRESS_IP})."
+            echo "::error::Recusando sobrescrever um registro existente — ele pode ser de produção."
+            echo "::error::Se o reapontamento for intencional, defina ALLOW_DNS_OVERWRITE=true em deploy.env."
+            exit 1
+          fi
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_REGION }}
+
+      # Nomes como `default`, `kube-system` ou `gov-digital-dev` passam na validação do
+      # formulário. Sem esta checagem, o deploy aplicaria manifests dentro de um
+      # namespace de sistema ou de outra aplicação.
+      - name: Garantir namespace
+        run: |
+          set -euo pipefail
+          if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            DONO="$(kubectl get namespace "$NAMESPACE" \
+              -o jsonpath='{.metadata.labels.valid\.ia\.br/app}' 2>/dev/null || true)"
+            if [ "$DONO" != "$APP_NAME" ]; then
+              echo "::error::O namespace ${NAMESPACE} já existe e não pertence a ${APP_NAME}."
+              echo "::error::Dono atual: ${DONO:-<sem dono registrado>}."
+              exit 1
+            fi
+            echo "Namespace ${NAMESPACE} já existe e pertence a ${APP_NAME}."
+          else
+            kubectl create namespace "$NAMESPACE"
+          fi
+          kubectl label namespace "$NAMESPACE" --overwrite \
+            "valid.ia.br/app=${APP_NAME}" \
+            app.kubernetes.io/managed-by=backstage-scaffolder
+
+      - name: Aplicar manifests
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" apply -f k8s/
+          kubectl -n "$NAMESPACE" set image "deployment/$APP_NAME" \
+            "app=gcr.io/${PROJECT_ID}/${APP_NAME}:${GITHUB_SHA}"
+          kubectl -n "$NAMESPACE" rollout status "deployment/$APP_NAME" --timeout=300s
+
+      - name: Resumo
+        if: always()
+        run: |
+          CERT="$(kubectl -n "$NAMESPACE" get managedcertificate "${APP_NAME}-cert" \
+            -o jsonpath='{.status.certificateStatus}' 2>/dev/null || echo desconhecido)"
+          {
+            echo "### Deploy de ${APP_NAME}"
+            echo ""
+            echo "| Item | Valor |"
+            echo "| --- | --- |"
+            echo "| URL | https://${DOMAIN} |"
+            echo "| IP | ${INGRESS_IP:-n/d} |"
+            echo "| Namespace | ${NAMESPACE} |"
+            echo "| Imagem | gcr.io/${PROJECT_ID}/${APP_NAME}:${GITHUB_SHA} |"
+            echo "| Certificado TLS | ${CERT} |"
+            echo ""
+            if [ "$CERT" != "Active" ]; then
+              echo "O certificado ainda está sendo emitido (leva de 15 a 60 minutos)."
+              echo "Até lá, erros de conexão em https://${DOMAIN} são esperados."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

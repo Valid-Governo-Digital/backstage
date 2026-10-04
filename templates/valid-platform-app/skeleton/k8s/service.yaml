@@ -1,0 +1,36 @@
+# O GCLB não usa as probes do Kubernetes: ele faz o próprio health check e, sem este
+# BackendConfig, mira em `/` na porta do container. Apontar para /health evita que o
+# backend fique UNHEALTHY e o ingress devolva 502.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: ${{ values.name }}-backend-config
+spec:
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    type: HTTP
+    requestPath: /health
+    port: ${{ values.port }}
+    timeoutSec: 5
+    checkIntervalSec: 15
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}
+  labels:
+    app: ${{ values.name }}
+  annotations:
+    cloud.google.com/backend-config: '{"default": "${{ values.name }}-backend-config"}'
+spec:
+  type: NodePort
+  selector:
+    app: ${{ values.name }}
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: ${{ values.port }}
+      name: http

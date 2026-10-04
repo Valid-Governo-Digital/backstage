@@ -15,35 +15,29 @@
  */
 
 import { createBackendModule } from '@backstage/backend-plugin-api';
-import { githubAuthenticator } from '@backstage/plugin-auth-backend-module-github-provider';
+import { googleAuthenticator } from '@backstage/plugin-auth-backend-module-google-provider';
 import {
   authProvidersExtensionPoint,
   createOAuthProviderFactory,
 } from '@backstage/plugin-auth-node';
-import {
-  createGithubOrgSignInResolver,
-  GITHUB_MEMBERSHIP_SCOPE,
-} from './signInResolvers';
+import { createGoogleDomainSignInResolver } from './signInResolvers';
 
 /**
- * Login pelo GitHub restrito aos membros ativos de Valid-Governo-Digital.
- *
- * O resolver consulta a membership com o token do próprio login, por isso o escopo
- * `read:org` é pedido sempre (além do `read:user` obrigatório do provider).
+ * Login pelo Google restrito a e-mails verificados de ALLOWED_EMAIL_DOMAINS
+ * (./signInResolvers).
  */
 export default createBackendModule({
   pluginId: 'auth',
-  moduleId: 'githubProvider',
+  moduleId: 'googleProvider',
   register(reg) {
     reg.registerInit({
       deps: { providers: authProvidersExtensionPoint },
       async init({ providers }) {
         providers.registerProvider({
-          providerId: 'github',
+          providerId: 'google',
           factory: createOAuthProviderFactory({
-            authenticator: githubAuthenticator,
-            additionalScopes: [GITHUB_MEMBERSHIP_SCOPE],
-            signInResolver: createGithubOrgSignInResolver(),
+            authenticator: googleAuthenticator,
+            signInResolver: createGoogleDomainSignInResolver(),
           }),
         });
       },
