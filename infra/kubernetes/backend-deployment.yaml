@@ -33,11 +33,22 @@ spec:
                 name: backstage-hub-cfg
             - secretRef:
                 name: backstage-hub-secrets
+          # O liveness responde 200 assim que o processo HTTP sobe, mesmo com o backend
+          # travado no meio da inicialização (já houve pod 12 dias assim: readiness 503 e
+          # liveness 200, sem nunca reiniciar). A startupProbe usa o READINESS: se o
+          # backend não ficar pronto em ~5 min (30 x 10s), o kubelet reinicia o container.
+          # Liveness e readiness só começam depois que a startupProbe passa.
+          startupProbe:
+            httpGet:
+              path: /.backstage/health/v1/readiness
+              port: 7007
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /.backstage/health/v1/liveness
               port: 7007
-            initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 10
             failureThreshold: 3
@@ -45,7 +56,6 @@ spec:
             httpGet:
               path: /.backstage/health/v1/readiness
               port: 7007
-            initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 10
             failureThreshold: 6
@@ -64,9 +74,12 @@ metadata:
 spec:
   connectionDraining:
     drainingTimeoutSec: 60
+  # O health check do GCLB decide quais pods recebem tráfego, independentemente das
+  # probes do kubelet. Precisa ser o READINESS: com o liveness, um pod que nunca
+  # terminou de subir era considerado saudável e recebia metade das requisições (404).
   healthCheck:
     type: HTTP
-    requestPath: /.backstage/health/v1/liveness
+    requestPath: /.backstage/health/v1/readiness
     port: 7007
     timeoutSec: 10
     checkIntervalSec: 15
