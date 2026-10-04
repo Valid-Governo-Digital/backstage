@@ -16,10 +16,7 @@
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { SignInPageBlueprint } from '@backstage/plugin-app-react';
 import { SignInPage } from '@backstage/core-components';
-import {
-  githubAuthApiRef,
-  googleAuthApiRef,
-} from '@backstage/core-plugin-api';
+import { githubAuthApiRef, googleAuthApiRef } from '@backstage/core-plugin-api';
 
 /**
  * Substitui a tela de login padrão, que é fixa em `providers={['guest']}`
@@ -27,9 +24,9 @@ import {
  * autenticar quando NODE_ENV !== 'development', então em produção o login só funciona
  * com um provider real.
  *
- * Os providers do backend ficam em packages/backend/src/authModule{Github,Google}Provider.ts.
- * O do Google restringe a entrada aos domínios permitidos; o do GitHub aceita qualquer
- * conta do GitHub, então trate-o como conveniência, não como controle de acesso.
+ * Os providers do backend ficam em packages/backend/src/authModule{Github,Google}Provider.ts,
+ * com os resolvers em packages/backend/src/signInResolvers.ts: o Google só aceita e-mail
+ * verificado @valid.com e o GitHub só aceita membro ativo de Valid-Governo-Digital.
  */
 export const appModuleSignInPage = createFrontendModule({
   pluginId: 'app',
@@ -52,7 +49,7 @@ export const appModuleSignInPage = createFrontendModule({
                 {
                   id: 'github-auth-provider',
                   title: 'GitHub',
-                  message: 'Entre com sua conta do GitHub',
+                  message: 'Membros da organização Valid-Governo-Digital',
                   apiRef: githubAuthApiRef,
                 },
               ]}
